@@ -1,2 +1,3 @@
-raw_links.csv
+*.csv
 __pycache__/
+.env

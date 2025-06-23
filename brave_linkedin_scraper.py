@@ -4,6 +4,10 @@ import time
 from typing import Dict, List, Set
 
 import requests
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Mapping of profession to keyword variants
 PROFESSIONS: Dict[str, List[str]] = {
@@ -99,8 +103,9 @@ PROFESSIONS: Dict[str, List[str]] = {
 }
 
 API_URL = "https://api.search.brave.com/res/v1/web/search"
-QUERY_TEMPLATE = 'site:linkedin.com/in "Santa Clara University" "{}"'
+QUERY_TEMPLATE = 'site:linkedin.com/in "Santa Clara University" {}'
 RESULTS_PER_PAGE = 20  # Brave API supports up to 20 results per page
+MAX_OFFSET = 9  # Brave API limit - can only offset up to 9 pages
 TARGET_RESULTS_PER_PROFESSION = 40
 
 
@@ -117,8 +122,24 @@ def brave_search(query: str, offset: int, api_key: str) -> Dict:
         "count": RESULTS_PER_PAGE,
         "offset": offset,
     }
+    
+    # Add debug logging
+    print(f"Making request with query: {query}")
+    print(f"Params: {params}")
+    
     response = requests.get(API_URL, headers=headers, params=params, timeout=10)
-    response.raise_for_status()
+    
+    # Add error handling
+    if response.status_code == 429:
+        print("Rate limited! Waiting 60 seconds...")
+        time.sleep(60)  # Wait 60 seconds for rate limit to reset
+        # Retry the request
+        response = requests.get(API_URL, headers=headers, params=params, timeout=10)
+    
+    if response.status_code != 200:
+        print(f"Error {response.status_code}: {response.text}")
+        response.raise_for_status()
+    
     return response.json()
 
 
@@ -136,12 +157,44 @@ def parse_result(item: Dict) -> Dict:
     return {"name": name, "linkedin_url": url}
 
 
+def save_csv(records: List[Dict[str, str]], filename: str) -> None:
+    with open(filename, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f, fieldnames=["name", "linkedin_url", "search_keyword", "profession"]
+        )
+        writer.writeheader()
+        writer.writerows(records)
+
+
+def append_to_csv(record: Dict[str, str], filename: str) -> None:
+    """Append a single record to the CSV file."""
+    # Check if file exists to determine if we need to write header
+    file_exists = os.path.exists(filename)
+    
+    with open(filename, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f, fieldnames=["name", "linkedin_url", "search_keyword", "profession"]
+        )
+        
+        # Write header only if file is new
+        if not file_exists:
+            writer.writeheader()
+        
+        writer.writerow(record)
+
+
 def collect_profiles(api_key: str) -> List[Dict[str, str]]:
     profiles: List[Dict[str, str]] = []
     seen_urls: Set[str] = set()
     seen_names: Set[str] = set()
+    
+    # Create/clear the CSV file at the start
+    csv_filename = "raw_links.csv"
+    save_csv([], csv_filename)  # This creates the file with just the header
+    print(f"Created CSV file: {csv_filename}")
 
     for profession, keywords in PROFESSIONS.items():
+        print(f"\nProcessing profession: {profession}")
         count_for_profession = 0
         keyword_index = 0
 
@@ -152,7 +205,8 @@ def collect_profiles(api_key: str) -> List[Dict[str, str]]:
             query = QUERY_TEMPLATE.format(keyword)
             offset = 0
 
-            while count_for_profession < TARGET_RESULTS_PER_PROFESSION:
+            # Limit offset to MAX_OFFSET (9)
+            while count_for_profession < TARGET_RESULTS_PER_PROFESSION and offset <= MAX_OFFSET:
                 data = brave_search(query, offset=offset, api_key=api_key)
                 results = data.get("web", {}).get("results", [])
                 if not results:
@@ -169,14 +223,18 @@ def collect_profiles(api_key: str) -> List[Dict[str, str]]:
                     if url in seen_urls or name.lower() in seen_names:
                         continue
 
-                    profiles.append(
-                        {
-                            "name": name,
-                            "linkedin_url": url,
-                            "search_keyword": keyword,
-                            "profession": profession,
-                        }
-                    )
+                    profile_record = {
+                        "name": name,
+                        "linkedin_url": url,
+                        "search_keyword": keyword,
+                        "profession": profession,
+                    }
+                    
+                    profiles.append(profile_record)
+                    
+                    # Immediately append to CSV
+                    append_to_csv(profile_record, csv_filename)
+                    print(f"Added: {name} ({profession})")
 
                     seen_urls.add(url)
                     seen_names.add(name.lower())
@@ -185,19 +243,11 @@ def collect_profiles(api_key: str) -> List[Dict[str, str]]:
                     if count_for_profession >= TARGET_RESULTS_PER_PROFESSION:
                         break
 
-                offset += RESULTS_PER_PAGE
-                time.sleep(1)  # avoid hitting rate limits
+                offset += 1  # Changed from RESULTS_PER_PAGE to 1
+                time.sleep(2)  # Increased from 1 to 2 seconds to respect rate limit
 
+    print(f"\nCompleted! Total profiles collected: {len(profiles)}")
     return profiles
-
-
-def save_csv(records: List[Dict[str, str]], filename: str) -> None:
-    with open(filename, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(
-            f, fieldnames=["name", "linkedin_url", "search_keyword", "profession"]
-        )
-        writer.writeheader()
-        writer.writerows(records)
 
 
 def main() -> None:
@@ -206,7 +256,8 @@ def main() -> None:
         raise EnvironmentError("BRAVE_API_KEY environment variable is required")
 
     profiles = collect_profiles(api_key)
-    save_csv(profiles, "raw_links.csv")
+    # CSV is already saved incrementally, so we don't need to save again
+    print(f"Results saved to raw_links.csv")
 
 
 if __name__ == "__main__":
