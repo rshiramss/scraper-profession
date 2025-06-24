@@ -172,10 +172,15 @@ def append_to_csv(record: Dict[str, str], filename: str) -> None:
         writer.writerow(record)
 
 
-def collect_profiles(api_key: str, cx: str) -> List[Dict[str, str]]:
+def collect_profiles(api_key: str, cx: str) -> tuple[list[dict[str, str]], str]:
+    """Collect profile data and write it to a timestamped CSV file.
+
+    Returns a tuple of the collected profiles and the CSV filename used.
+    """
+
     profiles: List[Dict[str, str]] = []
     seen_urls: Set[str] = set()
-    
+
     # Create/clear the CSV file at the start
     csv_filename = f"raw_links_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     save_csv([], csv_filename)  # This creates the file with just the header
@@ -234,7 +239,7 @@ def collect_profiles(api_key: str, cx: str) -> List[Dict[str, str]]:
                 time.sleep(2)  # Increased from 1 to 2 seconds to respect rate limit
 
     print(f"\nCompleted! Total profiles collected: {len(profiles)}")
-    return profiles
+    return profiles, csv_filename
 
 
 def main() -> None:
@@ -243,8 +248,8 @@ def main() -> None:
     if not api_key or not cx:
         raise EnvironmentError("GOOGLE_API_KEY and GOOGLE_CX environment variables are required")
 
-    profiles = collect_profiles(api_key, cx)
-    # CSV is already saved incrementally, so we don't need to save again
+    profiles, csv_filename = collect_profiles(api_key, cx)
+    # CSV is already saved incrementally, so we just print the filename
     print(f"Results saved to {csv_filename}")
 
 
