@@ -174,7 +174,6 @@ def append_to_csv(record: Dict[str, str], filename: str) -> None:
 def collect_profiles(api_key: str, cx: str) -> List[Dict[str, str]]:
     profiles: List[Dict[str, str]] = []
     seen_urls: Set[str] = set()
-    seen_names: Set[str] = set()
     
     # Create/clear the CSV file at the start
     csv_filename = "raw_links.csv"
@@ -208,7 +207,7 @@ def collect_profiles(api_key: str, cx: str) -> List[Dict[str, str]]:
                     url = parsed["linkedin_url"]
                     name = parsed["name"]
 
-                    if url in seen_urls or name.lower() in seen_names:
+                    if url in seen_urls:
                         continue
 
                     profile_record = {
@@ -225,7 +224,6 @@ def collect_profiles(api_key: str, cx: str) -> List[Dict[str, str]]:
                     print(f"Added: {name} ({profession})")
 
                     seen_urls.add(url)
-                    seen_names.add(name.lower())
                     count_for_profession += 1
 
                     if count_for_profession >= TARGET_RESULTS_PER_PROFESSION:
