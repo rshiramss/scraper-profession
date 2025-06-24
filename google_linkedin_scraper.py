@@ -109,6 +109,29 @@ RESULTS_PER_PAGE = 10  # Google Custom Search returns up to 10 results per page
 MAX_OFFSET = 9
 TARGET_RESULTS_PER_PROFESSION = 40
 
+# Companies to use for targeted searches
+COMPANIES: List[str] = [
+    "Google",
+    "Microsoft",
+    "Amazon",
+    "Apple",
+    "Meta",
+    "Netflix",
+    "Tesla",
+    "Nvidia",
+    "Intel",
+    "Oracle",
+]
+
+
+def build_query(keyword: str, company: str | None) -> str:
+    """Return a search query for the given keyword and optional company."""
+    if company:
+        search_part = f'{keyword} "{company}"'
+    else:
+        search_part = keyword
+    return QUERY_TEMPLATE.format(search_part)
+
 
 def google_search(query: str, offset: int, api_key: str, cx: str) -> Dict:
     """Perform a single Google Custom Search API request."""
@@ -189,16 +212,15 @@ def collect_profiles(api_key: str, cx: str) -> tuple[list[dict[str, str]], str]:
     for profession, keywords in PROFESSIONS.items():
         print(f"\nProcessing profession: {profession}")
         count_for_profession = 0
-        keyword_index = 0
+        company_counts = {c: 0 for c in COMPANIES}
 
-        # Continue until we have enough profiles for this profession
-        while count_for_profession < TARGET_RESULTS_PER_PROFESSION:
-            keyword = keywords[keyword_index % len(keywords)]
-            keyword_index += 1
-            query = QUERY_TEMPLATE.format(keyword)
+        # ------ Generic searches (no company term) ------
+        for keyword in keywords:
+            if count_for_profession >= TARGET_RESULTS_PER_PROFESSION:
+                break
+            query = build_query(keyword, None)
             offset = 0
 
-            # Limit offset to MAX_OFFSET (9)
             while count_for_profession < TARGET_RESULTS_PER_PROFESSION and offset <= MAX_OFFSET:
                 data = google_search(query, offset=offset, api_key=api_key, cx=cx)
                 results = data.get("items", [])
@@ -216,16 +238,25 @@ def collect_profiles(api_key: str, cx: str) -> tuple[list[dict[str, str]], str]:
                     if url in seen_urls:
                         continue
 
+                    title_lower = item.get("title", "").lower()
+                    snippet_lower = item.get("snippet", "").lower()
+                    matched_company = None
+                    for comp in COMPANIES:
+                        if comp.lower() in title_lower or comp.lower() in snippet_lower:
+                            matched_company = comp
+                            break
+
+                    if matched_company:
+                        company_counts[matched_company] += 1
+
                     profile_record = {
                         "name": name,
                         "linkedin_url": url,
                         "search_keyword": keyword,
                         "profession": profession,
                     }
-                    
+
                     profiles.append(profile_record)
-                    
-                    # Immediately append to CSV
                     append_to_csv(profile_record, csv_filename)
                     print(f"Added: {name} ({profession})")
 
@@ -235,8 +266,62 @@ def collect_profiles(api_key: str, cx: str) -> tuple[list[dict[str, str]], str]:
                     if count_for_profession >= TARGET_RESULTS_PER_PROFESSION:
                         break
 
-                offset += 1  # Changed from RESULTS_PER_PAGE to 1
-                time.sleep(2)  # Increased from 1 to 2 seconds to respect rate limit
+                offset += 1
+                time.sleep(2)
+
+        # ------ Targeted searches with company ------
+        if count_for_profession < TARGET_RESULTS_PER_PROFESSION:
+            for company in COMPANIES:
+                if count_for_profession >= TARGET_RESULTS_PER_PROFESSION:
+                    break
+                keyword_index = 0
+
+                while count_for_profession < TARGET_RESULTS_PER_PROFESSION:
+                    keyword = keywords[keyword_index % len(keywords)]
+                    keyword_index += 1
+                    query = build_query(keyword, company)
+                    offset = 0
+
+                    while count_for_profession < TARGET_RESULTS_PER_PROFESSION and offset <= MAX_OFFSET:
+                        data = google_search(query, offset=offset, api_key=api_key, cx=cx)
+                        results = data.get("items", [])
+                        if not results:
+                            break
+
+                        for item in results:
+                            parsed = parse_result(item)
+                            if not parsed:
+                                continue
+
+                            url = parsed["linkedin_url"]
+                            name = parsed["name"]
+
+                            if url in seen_urls:
+                                continue
+
+                            profile_record = {
+                                "name": name,
+                                "linkedin_url": url,
+                                "search_keyword": f"{keyword} {company}",
+                                "profession": profession,
+                            }
+
+                            profiles.append(profile_record)
+                            append_to_csv(profile_record, csv_filename)
+                            print(f"Added: {name} ({profession})")
+
+                            seen_urls.add(url)
+                            count_for_profession += 1
+                            company_counts[company] += 1
+
+                            if count_for_profession >= TARGET_RESULTS_PER_PROFESSION:
+                                break
+
+                        offset += 1
+                        time.sleep(2)
+
+                    if count_for_profession >= TARGET_RESULTS_PER_PROFESSION:
+                        break
 
     print(f"\nCompleted! Total profiles collected: {len(profiles)}")
     return profiles, csv_filename
