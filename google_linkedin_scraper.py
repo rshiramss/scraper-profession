@@ -2,6 +2,7 @@ import os
 import csv
 import time
 from typing import Dict, List, Set
+import datetime
 
 import requests
 from dotenv import load_dotenv
@@ -176,7 +177,7 @@ def collect_profiles(api_key: str, cx: str) -> List[Dict[str, str]]:
     seen_urls: Set[str] = set()
     
     # Create/clear the CSV file at the start
-    csv_filename = "raw_links.csv"
+    csv_filename = f"raw_links_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     save_csv([], csv_filename)  # This creates the file with just the header
     print(f"Created CSV file: {csv_filename}")
 
@@ -244,7 +245,7 @@ def main() -> None:
 
     profiles = collect_profiles(api_key, cx)
     # CSV is already saved incrementally, so we don't need to save again
-    print(f"Results saved to raw_links.csv")
+    print(f"Results saved to {csv_filename}")
 
 
 if __name__ == "__main__":
