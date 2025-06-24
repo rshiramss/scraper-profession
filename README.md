@@ -1,12 +1,14 @@
 # Scraper Profession
 
-This repository contains a simple scraper that collects LinkedIn profile URLs for various professions related to **Santa Clara University** using the Brave Search API.
+This repository contains a simple scraper that collects LinkedIn profile URLs for various professions related to **Santa Clara University** using the Google Custom Search API.
 
 ## Requirements
 
 - Python 3.12+
 - [`requests`](https://pypi.org/project/requests/) (see `requirements.txt`)
-- A Brave Search API key stored in the environment variable `BRAVE_API_KEY`
+- [`python-dotenv`](https://pypi.org/project/python-dotenv/)
+- A Google Custom Search API key stored in the environment variable `GOOGLE_API_KEY`
+- A Custom Search Engine ID stored in the environment variable `GOOGLE_CX`
 
 Install dependencies:
 
@@ -19,7 +21,7 @@ pip install -r requirements.txt
 Run the scraper:
 
 ```bash
-python brave_linkedin_scraper.py
+python google_linkedin_scraper.py
 ```
 
 The script will generate a `raw_links.csv` file with columns:

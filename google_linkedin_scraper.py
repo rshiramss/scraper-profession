@@ -102,56 +102,44 @@ PROFESSIONS: Dict[str, List[str]] = {
     ],
 }
 
-API_URL = "https://api.search.brave.com/res/v1/web/search"
+API_URL = "https://www.googleapis.com/customsearch/v1"
 QUERY_TEMPLATE = 'site:linkedin.com/in "Santa Clara University" {}'
-RESULTS_PER_PAGE = 20  # Brave API supports up to 20 results per page
-MAX_OFFSET = 9  # Brave API limit - can only offset up to 9 pages
+RESULTS_PER_PAGE = 10  # Google Custom Search returns up to 10 results per page
+MAX_OFFSET = 9
 TARGET_RESULTS_PER_PROFESSION = 40
 
 
-def brave_search(query: str, offset: int, api_key: str) -> Dict:
-    """Perform a single Brave Search API request."""
-    headers = {
-        "Accept": "application/json",
-        "Accept-Encoding": "gzip",
-        "X-Subscription-Token": api_key,
-    }
+def google_search(query: str, offset: int, api_key: str, cx: str) -> Dict:
+    """Perform a single Google Custom Search API request."""
     params = {
         "q": query,
-        "source": "api",
-        "count": RESULTS_PER_PAGE,
-        "offset": offset,
+        "key": api_key,
+        "cx": cx,
+        "num": RESULTS_PER_PAGE,
+        "start": offset * RESULTS_PER_PAGE + 1,
     }
-    
-    # Add debug logging
+
     print(f"Making request with query: {query}")
     print(f"Params: {params}")
-    
-    response = requests.get(API_URL, headers=headers, params=params, timeout=10)
-    
-    # Add error handling
-    if response.status_code == 429:
-        print("Rate limited! Waiting 60 seconds...")
-        time.sleep(60)  # Wait 60 seconds for rate limit to reset
-        # Retry the request
-        response = requests.get(API_URL, headers=headers, params=params, timeout=10)
-    
+
+    response = requests.get(API_URL, params=params, timeout=10)
+
     if response.status_code != 200:
         print(f"Error {response.status_code}: {response.text}")
         response.raise_for_status()
-    
+
     return response.json()
 
 
 def parse_result(item: Dict) -> Dict:
-    """Extract relevant information from a Brave search result item."""
-    url = item.get("url", "")
+    """Extract relevant information from a Google search result item."""
+    url = item.get("link", "")
     if "/in/" not in url:
         return {}
 
     # Attempt to extract a human readable name from the title or description
     title = item.get("title", "")
-    snippet = item.get("description", "")
+    snippet = item.get("snippet", "")
     name = title.split("-")[0].strip() if title else snippet.split("-")[0].strip()
 
     return {"name": name, "linkedin_url": url}
@@ -183,7 +171,7 @@ def append_to_csv(record: Dict[str, str], filename: str) -> None:
         writer.writerow(record)
 
 
-def collect_profiles(api_key: str) -> List[Dict[str, str]]:
+def collect_profiles(api_key: str, cx: str) -> List[Dict[str, str]]:
     profiles: List[Dict[str, str]] = []
     seen_urls: Set[str] = set()
     seen_names: Set[str] = set()
@@ -207,8 +195,8 @@ def collect_profiles(api_key: str) -> List[Dict[str, str]]:
 
             # Limit offset to MAX_OFFSET (9)
             while count_for_profession < TARGET_RESULTS_PER_PROFESSION and offset <= MAX_OFFSET:
-                data = brave_search(query, offset=offset, api_key=api_key)
-                results = data.get("web", {}).get("results", [])
+                data = google_search(query, offset=offset, api_key=api_key, cx=cx)
+                results = data.get("items", [])
                 if not results:
                     break
 
@@ -251,11 +239,12 @@ def collect_profiles(api_key: str) -> List[Dict[str, str]]:
 
 
 def main() -> None:
-    api_key = os.getenv("BRAVE_API_KEY")
-    if not api_key:
-        raise EnvironmentError("BRAVE_API_KEY environment variable is required")
+    api_key = os.getenv("GOOGLE_API_KEY")
+    cx = os.getenv("GOOGLE_CX")
+    if not api_key or not cx:
+        raise EnvironmentError("GOOGLE_API_KEY and GOOGLE_CX environment variables are required")
 
-    profiles = collect_profiles(api_key)
+    profiles = collect_profiles(api_key, cx)
     # CSV is already saved incrementally, so we don't need to save again
     print(f"Results saved to raw_links.csv")
 
