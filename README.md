@@ -1,4 +1,4 @@
-# Scraper Profession
+# Profession Scraper 
 
 This repository contains a simple scraper that collects LinkedIn profile URLs for various professions related to **Santa Clara University** using the Google Custom Search API.
 
